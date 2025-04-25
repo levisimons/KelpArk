@@ -4,7 +4,7 @@ require(raster)
 require(sf)
 
 #Set working directory
-wd <- "/Users/levisimons/Desktop/KelpArk"
+wd <- ""
 setwd(wd)
 
 #Set random number string
