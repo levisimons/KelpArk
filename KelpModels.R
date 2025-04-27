@@ -12,6 +12,7 @@ require(randomForest)
 require(DescTools)
 require(ggplot2)
 require(viridis)
+require(virtualspecies)
 
 #Set working directory
 wd <- ""
@@ -24,7 +25,7 @@ set.seed(1)
 Pacific_taxa <- c("mastocarpus","gracilaria_andersonii","hedophyllum_sessile","postelsia_palmaeformis","laminaria_setchellii","fucus_distichus","nereocystis_luetkeana","macrocystis_pyrifera","alaria_marginata","saccharina_latissima","pyropia")
 Gulf_taxa <- c("sargassum","ulva","codium","gracilaria","eucheuma")
 #Designate taxon
-taxon <- "pyropia"
+taxon <- "sargassum"
 #Designate taxonomic rank
 taxon_rank <- "genus"
 
@@ -58,12 +59,22 @@ if(taxon %in% Gulf_taxa){
 #Build a raster stack of all environmental rasters.
 #Rasters are generated using https://github.com/levisimons/KelpArk/blob/main/KelpRasters.R
 env_rasters <- stack(paste("MapLayers/",env_layers,sep=""))
-#Build a raster stack of all future environmental rasters.
-future_env_rasters <- stack(paste("FutureMapLayers/",env_layers,sep=""))
-
 #Update column names so the column names match the environmental raster file names
 names(env_rasters) <- env_layers
 names(future_env_rasters) <- future_env_layers
+#Filter collinear environmental variables
+#https://onlinelibrary.wiley.com/doi/pdf/10.1002/ece3.10901
+env_retain <- removeCollinearity(env_rasters,method="spearman",
+                                  multicollinearity.cutoff = 0.75,sample.points = TRUE,
+                                  nb.points = 1000,select.variables = TRUE)
+
+#Build a raster stack of all environmental rasters with filtered layers.
+env_rasters <- stack(paste("MapLayers/",env_retain,sep=""))
+#Build a raster stack of all future environmental rasters with filtered layers.
+future_env_rasters <- stack(paste("FutureMapLayers/",env_retain,sep=""))
+#Update column names so the column names match the environmental raster file names
+names(env_rasters) <- env_retain
+names(future_env_rasters) <- env_retain
 
 #Extract raster values at occurrence points
 env_extracted <- raster::extract(env_rasters, input_species_points)
@@ -124,6 +135,8 @@ future_raster_predict_list <- c()
 importance_list <- c()
 #Create an empty list to store accuracy outputs.
 accuracy_list <- c()
+#Create an empty list to store partial plot outputs.
+partial_plot_list <- c()
 j <- 1
 i_max <- 50
 for(i in 1:i_max){
@@ -159,6 +172,19 @@ for(i in 1:i_max){
   TSS <- sensitivity+specificity-1
   #Store TSS results
   accuracy_list[i] <- TSS
+  
+  #Loop through each environmental variable and store the partial response outputs in a temporary data frame.
+  for(env_layer in env_retain){
+    #Store partial plot chart data in a temporary data frame.
+    tmp <- as.data.frame(partialPlot(rf1,subset_extracted[,!(colnames(subset_extracted) %in% "presence")],x.var=c(env_layer),plot=F))
+    #Transform logistic probabilities to regular probabilities.
+    tmp$y <- exp(tmp$y) / (1+exp(tmp$y))
+    #Rename probability column
+    colnames(tmp) <- c(env_layer,"Detection Probability")
+    #Store partial plot data in a list of data frames.
+    partial_plot_list[[j]] <- tmp
+    j <- j+1
+  }
 
   print(paste(i,Sys.time()))
 }
@@ -243,3 +269,18 @@ colnames(importance_total) <- c("VariableName","Importance")
 importance_total$Importance <- rank(desc(importance_total$Importance))
 #Save rank importance table.
 write.table(importance_total,paste(taxon,"_rank_importance.txt",sep=""),quote=FALSE,sep="\t",row.names = FALSE)
+
+#Collapse partial plot outputs into single data frame.
+partial_plots <- rbind.fill(partial_plot_list)
+partial_plots <- as.data.frame(partial_plots)
+write.table(partial_plots,paste(taxon,"_partial_plots.txt",sep=""),quote=FALSE,sep="\t",row.names = FALSE)
+partial_plots <- read.table(paste(taxon,"_partial_plots.txt",sep=""), header=TRUE, sep="\t",as.is=T,skip=0,fill=TRUE,check.names=FALSE, encoding = "UTF-8")
+
+#Plot partial dependence heat maps for continuous data.
+k <- 7
+ggplot(partial_plots, aes(x=!!sym(names(env_rasters[[k]])), y=`Detection Probability`) )+
+  xlab(names(env_rasters[[k]]))+ylab("Detection\nProbability")+
+  geom_bin2d(bins = 50)+
+  scale_fill_continuous(type = "viridis",name=paste("Frequency\n(Out of ",i_max," models)",sep=""))+
+  stat_smooth(aes(y = `Detection Probability`, fill=`Detection Probability`),method="auto",formula=y~x,color="violet",fill="red",n=0.1*sum(!is.na(partial_plots[,names(env_rasters[[k]])])))+
+  theme_bw(base_size=25)
