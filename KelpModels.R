@@ -26,67 +26,45 @@ Pacific_taxa <- c("mastocarpus","gracilaria_andersonii","hedophyllum_sessile","p
 Gulf_taxa <- c("sargassum","ulva","codium","gracilaria","eucheuma")
 #Designate taxon
 taxon <- "sargassum"
-#Designate taxonomic rank
-taxon_rank <- "genus"
 
-#Intake species occurrence data from GBIF
-input_species_data <- fread(input=paste(taxon,".csv",sep=""),sep="\t")
+#Intake species occurrence data from GBIF into a data table.  Use the variable name taxon in this process.
+
 
 #Convert species data to a spatial points object
-input_species_points <- st_as_sf(input_species_data, coords = c("decimalLongitude","decimalLatitude"),  crs = 4326) 
 
-#Spatially thin occurrence data
-input_species_data <- thin(
-  loc.data = input_species_data,
-  lat.col = "decimalLatitude",
-  long.col = "decimalLongitude",
-  spec.col = taxon_rank,          # Only needed if you have species column
-  thin.par = 9.26,            # Distance threshold (in km)
-  reps = 10,
-  write.files = FALSE
-)
 
-#Get a list of all environmental rasters in tif format.
-if(taxon %in% Pacific_taxa){
-  env_layers <- list.files(path="MapLayers",pattern = "^Pacific_.*\\.tif$")
-  future_env_layers <- list.files(path="FutureMapLayers",pattern = "^Pacific_.*\\.tif$")
-  }
-if(taxon %in% Gulf_taxa){
-  env_layers <- list.files(path="MapLayers",pattern = "^Gulf_.*\\.tif$")
-  future_env_layers <- list.files(path="FutureMapLayers",pattern = "^Gulf_.*\\.tif$")
-  }
+#Spatially thin occurrence data so that no two points are closer than 9.26 km, the resolution of Bio-Oracle data.
+
+
+#Get lists of all current and future environmental rasters in tif format.
+
 
 #Build a raster stack of all environmental rasters.
 #Rasters are generated using https://github.com/levisimons/KelpArk/blob/main/KelpRasters.R
-env_rasters <- stack(paste("MapLayers/",env_layers,sep=""))
-#Update column names so the column names match the environmental raster file names
-names(env_rasters) <- env_layers
-names(future_env_rasters) <- future_env_layers
-#Filter collinear environmental variables
-#https://onlinelibrary.wiley.com/doi/pdf/10.1002/ece3.10901
-env_retain <- removeCollinearity(env_rasters,method="spearman",
-                                  multicollinearity.cutoff = 0.75,sample.points = TRUE,
-                                  nb.points = 1000,select.variables = TRUE)
 
-#Build a raster stack of all environmental rasters with filtered layers.
-env_rasters <- stack(paste("MapLayers/",env_retain,sep=""))
-#Build a raster stack of all future environmental rasters with filtered layers.
-future_env_rasters <- stack(paste("FutureMapLayers/",env_retain,sep=""))
-#Update column names so the column names match the environmental raster file names
-names(env_rasters) <- env_retain
-names(future_env_rasters) <- env_retain
+#Update raster stack names for current and future environmental raster stacks so they match the environmental raster file names
 
-#Extract raster values at occurrence points
-env_extracted <- raster::extract(env_rasters, input_species_points)
+#Filter collinear environmental variables using current environmental raster stack.
+#Use a 0.75 Spearman correlation threshold, and 1000 background points, as per https://onlinelibrary.wiley.com/doi/pdf/10.1002/ece3.10901
 
-#Remove empty rows
-env_extracted <- as.data.frame(env_extracted[complete.cases(env_extracted),])
 
-#Add presence column
-env_extracted$presence <- 1
+#Build a raster stack of all current environmental rasters using just the filtered layers.
 
-#Set presence variable to factor for modeling.
-env_extracted$presence <- as.factor(env_extracted$presence)
+#Build a raster stack of all future environmental rasters using just the filtered layers.
+
+#Update raster stack names for current and future environmental raster stacks so they match the environmental raster file names
+
+#Extract current environmental raster values at species occurrence points
+
+
+#Remove empty rows from the extracted environmental data
+
+
+#Add presence column to extracted environmental data and set its value to 1.
+
+
+#Set presence column to be a factor from being numeric for modeling.
+
 
 #Set Pacific area boundaries
 Pacific <- st_bbox(c(xmin=-179,xmax=-117,ymin=32.5,ymax=61.5))
@@ -96,9 +74,10 @@ Gulf <- st_bbox(c(xmin=-99,xmax=-81.5,ymin=18,ymax=31))
 if(taxon %in% Pacific_taxa){points_buffer <- st_as_sfc(st_bbox(Pacific))}
 if(taxon %in% Gulf_taxa){points_buffer <- st_as_sfc(st_bbox(Gulf))}
 
-#Generate a set of random background points, twice in number to occurrences with environmental data.
-num_occurrences <- nrow(env_extracted)
-background_points = sf::st_sample(points_buffer, size=3*num_occurrences)
+#Determine the number of rows in the extracted environmental data
+
+#Generate a set of random points, three times the size of the number of rows in the extracted environmental data, within points_buffer
+
 
 #Convert single column coordinates to standard longitude/latitude columns
 background_points <- sf::st_coordinates(background_points)
