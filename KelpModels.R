@@ -12,7 +12,6 @@ require(randomForest)
 require(DescTools)
 require(ggplot2)
 require(viridis)
-require(virtualspecies)
 
 #Set working directory
 wd <- ""
@@ -77,34 +76,36 @@ if(taxon %in% Gulf_taxa){points_buffer <- st_as_sfc(st_bbox(Gulf))}
 #Determine the number of rows in the extracted environmental data
 
 #Generate a set of random points, three times the size of the number of rows in the extracted environmental data, within points_buffer
+#These are your background points
 
 
-#Convert single column coordinates to standard longitude/latitude columns
-background_points <- sf::st_coordinates(background_points)
+#Convert the single column coordinates in your background points object to standard longitude/latitude columns
+
 
 #Convert background points object to a data table
-background_points <- as.data.table(background_points)
 
-#Convert from longitude (X) and latitude (Y) columns to sf object.
-background_points <- sf::st_as_sf(background_points,coords = c("X","Y"),  crs = 4326)
 
-#Extract raster values at background points
-background_extracted <- raster::extract(env_rasters, background_points)
+#Using the longitude (X) and latitude (Y) columns, convert the background points to a sf object.
+#Make sure you're using a coordinate reference system (CRS) of 4326.
 
-#Update column names so the column names match the environmental raster file names
-colnames(background_extracted) <- env_layers
 
-#Remove empty rows
-background_extracted <- as.data.frame(background_extracted[complete.cases(background_extracted),])
+#Extract current environmental raster values at background points
 
-#Add presence column
-background_extracted$presence <- 0
+
+#Update column names of object with environmental data extracted at background points so the column names match the environmental raster file names
+
+
+#Remove empty rows from the object with environmental data extracted at background points
+
+
+#Add presence column to the object with environmental data extracted at background points.  Set its value to 0.
+
 
 #Set presence variable to factor for modeling.
-background_extracted$presence <- as.factor(background_extracted$presence)
+
 
 #Set a predictable random number generator seed for reproducibility.
-set.seed(1)
+
 
 #Create an empty list to store prediction rasters.
 raster_predict_list <- c()
@@ -120,37 +121,41 @@ j <- 1
 i_max <- 50
 for(i in 1:i_max){
   #Create a subset of the presence/background data with the following properties:
-  #1. Composed of a randomly selected 80% of rows from scb_extracted.
-  #2. Composed of rows randomly selected from background_extracted. The number of rows will also be 80% of rows found in scb_extracted.
+  #1. Composed of a randomly selected 80% of rows from env_extracted.
+  #2. Composed of rows randomly selected from background_extracted. The number of rows will also be 80% of rows found in env_extracted.
   #3. Merged these two subsets together.
-  subset_extracted <- rbind(env_extracted[sample(nrow(env_extracted),0.8*nrow(env_extracted)),],background_extracted[sample(nrow(background_extracted),0.8*nrow(env_extracted)),])
+
   
   #Run a random forest model over this data subset.
-  rf1 <- suppressWarnings(tuneRF(x=subset_extracted[,!(colnames(subset_extracted) %in% "presence")],y=subset_extracted$presence,stepFactor=1,plot=FALSE,doBest=TRUE))
+  #Use the presence column as the model output, and all other columns as inputs.
   
-  #Make a prediction raster from the random forest model and store it in a list.
-  raster_predict_list[[i]] <- dismo::predict(env_rasters,rf1,progress='text')
-  #Plot predicted raster
-  plot(raster_predict_list[[i]],col=viridis(10))
   
-  #Make a future prediction raster from the random forest model and store it in a list.
-  future_raster_predict_list[[i]] <- dismo::predict(future_env_rasters,rf1,progress='text')
-  #Plot predicted raster
-  plot(future_raster_predict_list[[i]],col=viridis(10))
+  #Make a prediction raster, using current environmental data, from the random forest model and store it as the ith element in raster_predict_list.
   
-  #Store relative importance of variable outputs as a temporary data frame.
-  tmp <- as.data.frame(rf1$importance)
+  #Plot prediction raster
+  
+  
+  #Make a future prediction raster from the random forest model, and the future environmental raster stack as input.
+  #Store it as the ith element in future_raster_predict_list.
+  
+  #Plot prediction raster
+  
+  
+  #Store relative importance of variable outputs in the random forest model in a data frame.
+  
   #Set one column to store the variable names from the row names.
-  tmp$VariableName <- rownames(tmp)
-  #Store this importance data frame in the importance list.
-  importance_list[[i]] <- tmp
+  
+  #Store this importance data frame in the ith element of importance_list.
+  
+  
+  #Calulate the sensitivity of the random forest model from the confusion matrix.
+  
+  #Calculate the specificity of the random forest model from the confusion matrix.
   
   #Calculate the true skill statistic TSS to evaluate model accuracy.
-  sensitivity <- rf1$confusion[[1]] / (rf1$confusion[[1]]+rf1$confusion[[2]])
-  specificity <- rf1$confusion[[4]] / (rf1$confusion[[4]]+rf1$confusion[[3]])
-  TSS <- sensitivity+specificity-1
-  #Store TSS results
-  accuracy_list[i] <- TSS
+  
+  #Store TSS results in the ith element of accuracy_list.
+  
   
   #Loop through each environmental variable and store the partial response outputs in a temporary data frame.
   for(env_layer in env_retain){
@@ -168,19 +173,20 @@ for(i in 1:i_max){
   print(paste(i,Sys.time()))
 }
 
-#Stack the list of prediction rasters.
-raster_predict <- brick(raster_predict_list)
-#Sum the list of prediction rasters.
-raster_predict <- calc(raster_predict, sum)
-#Save raster output.
+#Stack the list raster_predict_list into a raster brick.
+
+#Calculate a raster which is the sum of the layers in this raster brick.  This is the prediction frequency raster.
+
+#Save this raster output.  Use the variable taxon in naming the file.
 writeRaster(raster_predict,paste(taxon,"_prediction.tif",sep=""),overwrite=T)
 
-# Convert full raster to data frame
-raster_df <- as.data.frame(raster_predict, xy = TRUE)
-names(raster_df)[3] <- "value"
+# Convert the prediction frequency raster to a data frame
 
-# Extract non-zero points
-raster_points <- subset(raster_df, value > 0.5*i_max)
+#Rename the third column of this data frame to value
+
+
+#Remove elements from this data frame if the value column is less than or equal to the value of 0.5*i_max.
+
 
 #Plot prediction raster
 ggplot() +
@@ -201,11 +207,11 @@ range(na.omit(raster_df[raster_df$value > 0.5*i_max,"y"]))
 #Count the number of locations predicted to have suitable habitat.
 nrow(raster_df[raster_df$value > 0.5*i_max,])
 
-#Stack the list of future prediction rasters.
-future_raster_predict <- brick(future_raster_predict_list)
-#Sum the list of future prediction rasters.
-future_raster_predict <- calc(future_raster_predict, sum)
-#Save raster output.
+#Stack the list of future prediction rasters into a raster brick.
+
+#Sum the future prediction rasters in the raster brick into a single prediction frequency raster.
+
+#Save raster output.  Use the variable taxon in naming the file
 writeRaster(raster_predict,paste(taxon,"_future_prediction.tif",sep=""),overwrite=T)
 
 # Convert full raster to data frame
