@@ -214,12 +214,12 @@ nrow(raster_df[raster_df$value > 0.5*i_max,])
 #Save raster output.  Use the variable taxon in naming the file
 writeRaster(raster_predict,paste(taxon,"_future_prediction.tif",sep=""),overwrite=T)
 
-# Convert full raster to data frame
-raster_df <- as.data.frame(future_raster_predict, xy = TRUE)
-names(raster_df)[3] <- "value"
+# Convert the prediction frequency raster for the future kelp model to data frame
 
-# Extract non-zero points
-raster_points <- subset(raster_df, value > 0.5*i_max)
+#Set the third column name in this data frame to value
+
+
+#Remove elements from this data frame if the value column is less than or equal to the value of 0.5*i_max.
 
 #Plot prediction raster
 ggplot() +
@@ -244,15 +244,15 @@ nrow(raster_df[raster_df$value > 0.5*i_max,])
 mean(accuracy_list)
 sd(accuracy_list)
 
-#Convert list of importance data frames to a single data frame.
-importance_total <- rbind.fill(importance_list)
-#Calculate the mean relative importance for each variable.
-importance_total <- aggregate(x=importance_total$MeanDecreaseGini,by = list(importance_total$VariableName),FUN = mean)
+#Convert importance_list to a single data frame.
+
+#Calculate the mean relative importance for each variable in this variable importance data frame.
+
 #Rename columns.
 colnames(importance_total) <- c("VariableName","Importance")
-#Convert importance to rank importance.
-importance_total$Importance <- rank(desc(importance_total$Importance))
-#Save rank importance table.
+#Convert varible importance to variable rank importance.  Make 1 correspond to the most important variable.
+
+#Save rank importance table.  Use the variable name taxon in naming the file.
 write.table(importance_total,paste(taxon,"_rank_importance.txt",sep=""),quote=FALSE,sep="\t",row.names = FALSE)
 
 #Collapse partial plot outputs into single data frame.
@@ -262,7 +262,7 @@ write.table(partial_plots,paste(taxon,"_partial_plots.txt",sep=""),quote=FALSE,s
 partial_plots <- read.table(paste(taxon,"_partial_plots.txt",sep=""), header=TRUE, sep="\t",as.is=T,skip=0,fill=TRUE,check.names=FALSE, encoding = "UTF-8")
 
 #Plot partial dependence heat maps for continuous data.
-k <- 7
+k <- 1
 ggplot(partial_plots, aes(x=!!sym(names(env_rasters[[k]])), y=`Detection Probability`) )+
   xlab(names(env_rasters[[k]]))+ylab("Detection\nProbability")+
   geom_bin2d(bins = 50)+
